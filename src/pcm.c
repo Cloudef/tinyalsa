@@ -511,7 +511,7 @@ static int pcm_sync_ptr(struct pcm *pcm, int flags)
         }
         return 0;
     }
-    return 0;
+    return -1;
 }
 
 static int pcm_hw_mmap_status(struct pcm *pcm)
@@ -641,9 +641,13 @@ int pcm_get_htimestamp(struct pcm *pcm, unsigned int *avail,
             (pcm->mmap_status->state != PCM_STATE_DRAINING))
         return -1;
 
+#if 0
     *tstamp = pcm->mmap_status->tstamp;
     if (tstamp->tv_sec == 0 && tstamp->tv_nsec == 0)
         return -1;
+#else
+	(void)tstamp;
+#endif
 
     hw_ptr = pcm->mmap_status->hw_ptr;
     if (pcm->flags & PCM_IN)
@@ -711,6 +715,7 @@ int pcm_writei(struct pcm *pcm, const void *data, unsigned int frame_count)
             }
             return oops(pcm, errno, "cannot write stream data");
         }
+        pcm_sync_ptr(pcm, SNDRV_PCM_SYNC_PTR_APPL);
         return x.result;
     }
 }
@@ -1203,14 +1208,11 @@ int pcm_start(struct pcm *pcm)
     if (prepare_error)
         return prepare_error;
 
-    /* if pcm is linked, it may be already started by other pcm */
-    /* check pcm state is not in running state */
-    pcm_sync_ptr(pcm, 0);
+    /* if (pcm->flags & PCM_MMAP) */
+        pcm_sync_ptr(pcm, 0);
 
-    if (pcm->mmap_status->state != PCM_STATE_RUNNING) {
-        if (ioctl(pcm->fd, SNDRV_PCM_IOCTL_START) < 0)
-            return oops(pcm, errno, "cannot start channel");
-    }
+    if (ioctl(pcm->fd, SNDRV_PCM_IOCTL_START) < 0)
+        return oops(pcm, errno, "cannot start channel");
 
     pcm->running = 1;
     return 0;
@@ -1326,10 +1328,7 @@ int pcm_avail_update(struct pcm *pcm)
 
 int pcm_state(struct pcm *pcm)
 {
-    int err = pcm_sync_ptr(pcm, 0);
-    if (err < 0)
-        return err;
-
+    pcm_sync_ptr(pcm, 0);
     return pcm->mmap_status->state;
 }
 
